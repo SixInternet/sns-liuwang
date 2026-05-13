@@ -1,17 +1,13 @@
-"""信息卡片模型 — 收集的信息条目"""
-
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import String, Text, DateTime, ForeignKey
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
 
 class InfoCard(Base):
-    """信息卡片表，存储收集到的各类信息条目"""
-
     __tablename__ = "info_cards"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -31,12 +27,19 @@ class InfoCard(Base):
         String, nullable=False, default="pending", comment="状态: pending/liked/disliked/valuable/valueless"
     )
     collected_at: Mapped[datetime] = mapped_column(
-        DateTime, nullable=False, server_default="now()", comment="收集时间"
+        DateTime(timezone=True),
+        nullable=False,
+        default=datetime.now,
+        comment="收集时间",
     )
-    source_id: Mapped[str | None] = mapped_column(String, nullable=True, comment="关联原始信息源")
+    source_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sources.id"), nullable=True, comment="关联原始信息源"
+    )
     collector: Mapped[str | None] = mapped_column(
         String, nullable=True, comment="采集来源: 手机/桌面/网页"
     )
     raw_screenshot_url: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="原始截图链接"
     )
+
+    source = relationship("Source", back_populates="cards")

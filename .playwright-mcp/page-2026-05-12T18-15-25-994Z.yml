@@ -1,0 +1,9 @@
+- generic [ref=e4]:
+  - heading "注册" [level=1] [ref=e12]
+  - generic [ref=e6]:
+    - textbox "用户名" [ref=e7]
+    - textbox "密码" [ref=e8]
+    - button "注册" [disabled] [ref=e13]
+  - paragraph [ref=e10]:
+    - text: 已有账号？
+    - button "登录" [active] [ref=e14]

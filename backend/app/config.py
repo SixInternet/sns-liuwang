@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     # JWT 签名密钥
     secret_key: str = "change-me-to-a-random-secret-in-production"
 
+    # DeepSeek API 配置
+    deepseek_api_key: str = ""
+    deepseek_model: str = "deepseek-chat"
+
     @property
     def is_dev(self) -> bool:
         """是否为开发环境"""
