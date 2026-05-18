@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1 import router as v1_router
 from app.auth.router import router as auth_router
+from app.collector.scheduler import scheduler_manager
 from app.database import init_db, close_db, Base
 
 
@@ -22,9 +23,11 @@ async def lifespan(_app: FastAPI):
     async with db_mod.engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
+    await scheduler_manager.start()
+
     yield
 
-    # 关闭：释放数据库连接
+    await scheduler_manager.shutdown()
     await close_db()
 
 

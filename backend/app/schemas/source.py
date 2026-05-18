@@ -22,6 +22,7 @@ class SourceResponse(BaseModel):
     title: str
     url: str | None
     content_markdown: str | None
+    content_raw: str | None
     content_hash: str | None
     diff_log: str | None
     status: str  # pending/refined/failed

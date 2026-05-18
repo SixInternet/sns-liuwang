@@ -2,10 +2,21 @@ import { useState } from 'react'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
 import { CardListPage } from './pages/CardListPage'
+import { CollectionMonitorPage } from './pages/CollectionMonitorPage'
 import { LoginPage } from './pages/LoginPage'
+import { SearchSourcesPage } from './pages/SearchSourcesPage'
 import { SourcesPage } from './pages/SourcesPage'
+import { TopicsPage } from './pages/TopicsPage'
 
-type Tab = 'sources' | 'cards'
+type Tab = 'sources' | 'cards' | 'search-sources' | 'topics' | 'collection'
+
+const TAB_CONFIG: { key: Tab; label: string }[] = [
+  { key: 'sources', label: '📦 信息来源' },
+  { key: 'cards', label: '📋 卡片' },
+  { key: 'search-sources', label: '📡 搜索源' },
+  { key: 'topics', label: '🎯 主题' },
+  { key: 'collection', label: '📊 采集' },
+]
 
 function AuthenticatedApp() {
   const { isAuthenticated, username, logout } = useAuth()
@@ -30,29 +41,26 @@ function AuthenticatedApp() {
         </div>
       </header>
       <nav className="flex gap-0 border-b border-gray-200 bg-white px-3 sm:px-6 overflow-x-auto">
-        <button
-          onClick={() => setActiveTab('sources')}
-          className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-            activeTab === 'sources'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          📦 信息来源
-        </button>
-        <button
-          onClick={() => setActiveTab('cards')}
-          className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors ${
-            activeTab === 'cards'
-              ? 'border-gray-900 text-gray-900'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          📋 卡片
-        </button>
+        {TAB_CONFIG.map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`flex items-center gap-1.5 border-b-2 px-4 py-2.5 text-sm font-medium transition-colors whitespace-nowrap ${
+              activeTab === key
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
       </nav>
       <main className="mx-auto max-w-2xl px-3 sm:px-4 py-4 sm:py-6">
-        {activeTab === 'sources' ? <SourcesPage /> : <CardListPage />}
+        {activeTab === 'sources' && <SourcesPage />}
+        {activeTab === 'cards' && <CardListPage />}
+        {activeTab === 'search-sources' && <SearchSourcesPage />}
+        {activeTab === 'topics' && <TopicsPage />}
+        {activeTab === 'collection' && <CollectionMonitorPage />}
       </main>
     </div>
   )

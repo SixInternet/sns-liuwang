@@ -132,11 +132,12 @@ async def refine_source(db: AsyncSession, source_id: UUID) -> list[InfoCard]:
     if source is None:
         raise ValueError(f"Source {source_id} 不存在")
 
-    if not source.content_markdown:
-        raise ValueError("Source 没有 content_markdown，无法精炼")
+    content = source.content_markdown or source.content_raw
+    if not content:
+        raise ValueError("Source 没有可精炼的内容")
 
     # 调用 DeepSeek
-    cards_data = await _call_deepseek(source.content_markdown)
+    cards_data = await _call_deepseek(content)
 
     if not cards_data:
         raise ValueError("DeepSeek 未返回有效卡片数据")

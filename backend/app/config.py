@@ -26,9 +26,19 @@ class Settings(BaseSettings):
     # JWT 签名密钥
     secret_key: str = "change-me-to-a-random-secret-in-production"
 
+    # CDP 浏览器配置
+    cdp_host: str = "10.1.0.60"
+    cdp_port: int = 9333
+
     # DeepSeek API 配置
     deepseek_api_key: str = ""
     deepseek_model: str = "deepseek-chat"
+
+    # OpenClaw Gateway URL
+    openclaw_gateway_url: str = "http://localhost:18789"
+
+    # OpenClaw Gateway auth token
+    openclaw_gateway_token: str = ""
 
     @property
     def is_dev(self) -> bool:

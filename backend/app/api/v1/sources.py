@@ -42,6 +42,23 @@ async def list_sources(
     return SourceList(items=sources, total=total)
 
 
+@router.get('/grouped')
+async def list_sources_grouped(
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_session),
+    page: int = 1,
+    page_size: int = 5,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort: str = 'desc',
+) -> dict:
+    """按搜索源分组返回信息来源列表（需登录）。"""
+    return await source_service.list_sources_grouped(
+        session, user.id, page=page, page_size=page_size,
+        date_from=date_from, date_to=date_to, sort=sort,
+    )
+
+
 @router.get('/{source_id}', response_model=SourceResponse)
 async def get_source(
     source_id: UUID,

@@ -210,3 +210,116 @@ async def delete_source(db: AsyncSession, source_id: UUID) -> bool:
     await db.delete(source)
     await db.commit()
     return True
+
+
+async def list_sources_grouped(
+    db: AsyncSession,
+    user_id: UUID,
+    page: int = 1,
+    page_size: int = 5,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort: str = 'desc',
+) -> dict:
+    """按 SearchSource 分组返回 Source 列表，支持独立分页和日期过滤。"""
+    from app.models.search_source import SearchSource
+
+    # 1. 查询所有 search_sources
+    ss_result = await db.execute(
+        select(SearchSource).where(SearchSource.user_id == user_id)
+    )
+    all_search_sources = list(ss_result.scalars().all())
+
+    # 2. 查询所有 sources（带可选日期过滤）
+    q = select(Source).where(Source.user_id == user_id)
+    if date_from:
+        dt_from = datetime.fromisoformat(date_from)
+        q = q.where(Source.collected_at >= dt_from)
+    if date_to:
+        dt_to = datetime.fromisoformat(date_to)
+        q = q.where(Source.collected_at <= dt_to)
+    src_result = await db.execute(q)
+    all_sources = list(src_result.scalars().all())
+
+    # 3. 批量查询 card_count（避免 N+1）
+    source_ids = [s.id for s in all_sources]
+    if source_ids:
+        card_count_q = await db.execute(
+            select(InfoCard.source_id, func.count())
+            .where(InfoCard.source_id.in_(source_ids))
+            .group_by(InfoCard.source_id)
+        )
+        card_counts = dict(card_count_q.all())
+    else:
+        card_counts = {}
+
+    # 4. 辅助函数：将 Source 对象转为 dict
+    def _source_to_dict(s: Source) -> dict:
+        return {
+            'id': str(s.id),
+            'title': s.title,
+            'url': s.url,
+            'content_markdown': s.content_markdown,
+            'content_raw': s.content_raw,
+            'content_hash': s.content_hash,
+            'diff_log': s.diff_log,
+            'status': s.status,
+            'collector': s.collector,
+            'user_id': str(s.user_id),
+            'collected_at': s.collected_at.isoformat() if s.collected_at else None,
+            'refined_at': s.refined_at.isoformat() if s.refined_at else None,
+            'card_count': card_counts.get(s.id, 0),
+        }
+
+    # 5. 分组：每个 source 匹配到第一个 base_url 前缀的 search_source
+    grouped: dict[UUID, list[Source]] = {ss.id: [] for ss in all_search_sources}
+    uncategorized: list[Source] = []
+
+    for source in all_sources:
+        matched = False
+        if source.url:
+            for ss in all_search_sources:
+                if source.url.startswith(ss.base_url):
+                    grouped[ss.id].append(source)
+                    matched = True
+                    break
+        if not matched:
+            uncategorized.append(source)
+
+    # 6. 排序方向
+    reverse = sort == 'desc'
+
+    # 7. 构建响应
+    groups = []
+    for ss in all_search_sources:
+        items = grouped[ss.id]
+        items.sort(key=lambda s: s.collected_at or datetime.min.replace(tzinfo=timezone.utc), reverse=reverse)
+        total = len(items)
+        groups.append({
+            'search_source': {
+                'id': str(ss.id),
+                'title': ss.title,
+                'base_url': ss.base_url,
+                'domain': ss.domain,
+            },
+            'sources': [_source_to_dict(s) for s in items],
+            'total': total,
+            'page': 1,
+            'page_size': total or 1,
+        })
+
+
+    # Uncategorized
+    uncategorized.sort(key=lambda s: s.collected_at or datetime.min.replace(tzinfo=timezone.utc), reverse=reverse)
+    uc_total = len(uncategorized)
+
+    return {
+        'groups': groups,
+        'uncategorized': {
+            'sources': [_source_to_dict(s) for s in uncategorized],
+            'total': uc_total,
+            'page': page,
+            'page_size': page_size,
+        },
+        'total_groups': len(all_search_sources),
+    }

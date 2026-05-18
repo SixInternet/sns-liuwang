@@ -2,3 +2,8 @@ from app.models.user import User
 from app.models.info_card import InfoCard
 from app.models.source import Source
 from app.models.attachment import Attachment
+from app.models.search_source import SearchSource
+from app.models.topic import Topic
+from app.models.collection_run import CollectionRun
+from app.models.collection_progress import CollectionProgress
+from app.models.collection_progress import CollectionProgress
