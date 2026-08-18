@@ -1,8 +1,0 @@
-- generic [ref=e15]:
-  - banner [ref=e16]:
-    - heading "六网空间" [level=1] [ref=e17]
-    - generic [ref=e18]:
-      - generic [ref=e19]: browser_test_user
-      - button "退出登录" [ref=e20]
-  - main [ref=e21]:
-    - paragraph [ref=e22]: 欢迎回来，browser_test_user。卡片功能开发中…
