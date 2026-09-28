@@ -1,4 +1,4 @@
-"""AI Sub-Agent 采集 API — 进度汇报/内容提交/人工验证处理"""
+"""主会话采集 API — 进度汇报/内容提交/人工验证处理"""
 
 import logging
 from uuid import UUID
@@ -7,15 +7,21 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.router import get_current_user
+from app.config import get_settings
 from app.database import get_session
 from app.models.user import User
 from app.schemas.collection_progress import (
     ProgressReport,
     ProgressResponse,
-    ProgressList,
+    ProgressTimelineResponse,
+    ProgressReportResponse,
     IngestRequest,
 )
 from app.services import collection_progress_service
+from app.services.collection_progress_service import (
+    CollectionLimitError,
+    ContentTooLargeError,
+)
 from app.collector import agent_session
 
 logger = logging.getLogger(__name__)
@@ -28,17 +34,29 @@ async def ingest_content(
     req: IngestRequest,
     session: AsyncSession = Depends(get_session),
 ):
-    """Sub-agent 提交采集内容"""
+    """主会话提交采集内容（content_html）"""
+    content_html = req.content_html or req.content_raw
+    if not content_html:
+        raise HTTPException(status_code=422, detail="content_html 必填")
+
     try:
-        await collection_progress_service.create_source_from_ingest(
+        sources_created, max_sources = await collection_progress_service.create_source_from_ingest(
             db=session,
             collection_run_id=req.collection_run_id,
             title=req.title,
             url=req.url,
-            content_raw=req.content_raw,
+            content_html=content_html,
         )
         await session.commit()
-        return {"ok": True}
+        return {
+            "ok": True,
+            "sources_created": sources_created,
+            "max_sources": max_sources,
+        }
+    except CollectionLimitError as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except ContentTooLargeError as e:
+        raise HTTPException(status_code=413, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
@@ -46,13 +64,13 @@ async def ingest_content(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/progress", status_code=201)
+@router.post("/progress", status_code=201, response_model=ProgressReportResponse)
 async def report_progress(
     req: ProgressReport,
     session: AsyncSession = Depends(get_session),
 ):
-    """Sub-agent 汇报进度"""
-    entry = await collection_progress_service.report_progress(
+    """主会话汇报进度"""
+    entry, run = await collection_progress_service.report_progress(
         db=session,
         collection_run_id=req.collection_run_id,
         step=req.step,
@@ -60,28 +78,48 @@ async def report_progress(
         estimated_remaining=req.estimated_remaining,
         progress_type=req.progress_type,
         detail=req.detail,
+        step_phase=req.step_phase,
+        sources_collected=req.sources_collected,
+        max_sources=req.max_sources,
     )
     await session.commit()
-    return {"ok": True, "id": str(entry.id)}
+
+    settings = get_settings()
+    sources_created = (run.sources_created if run else 0) or 0
+    max_sources = req.max_sources or settings.collection_max_sources
+
+    return ProgressReportResponse(
+        ok=True,
+        id=str(entry.id),
+        sources_created=sources_created,
+        max_sources=max_sources,
+    )
 
 
-@router.get("/progress/{run_id}", response_model=list[ProgressResponse])
+@router.get("/progress/{run_id}")
 async def get_progress(
     run_id: UUID,
     latest: bool = False,
     session: AsyncSession = Depends(get_session),
 ):
-    """获取采集进度记录（含 CAPTCHA 状态）"""
+    """获取采集进度（默认完整时间线；?latest=1 仅最新一条）"""
+    items, total = await collection_progress_service.list_progress(
+        session, run_id, limit=100 if not latest else 1, latest=latest,
+    )
+    responses = [ProgressResponse.model_validate(i) for i in items]
+
     if latest:
-        # 只返回最新一条
-        items, total = await collection_progress_service.list_progress(
-            session, run_id, limit=1,
-        )
-    else:
-        items, total = await collection_progress_service.list_progress(
-            session, run_id, limit=100,
-        )
-    return [ProgressResponse.model_validate(i) for i in items]
+        return responses[0] if responses else None
+
+    sources_created, max_sources = await collection_progress_service.get_run_source_counts(
+        session, run_id,
+    )
+    return ProgressTimelineResponse(
+        items=responses,
+        total=total,
+        sources_created=sources_created,
+        max_sources=max_sources,
+    )
 
 
 @router.post("/progress/{run_id}/resolve")

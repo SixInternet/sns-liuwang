@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import String, Text, DateTime, ForeignKey
+from sqlalchemy import Boolean, String, Text, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -41,5 +41,6 @@ class InfoCard(Base):
     raw_screenshot_url: Mapped[str | None] = mapped_column(
         Text, nullable=True, comment="原始截图链接"
     )
+    memory_synced: Mapped[bool] = mapped_column(default=False, comment="是否已同步到记忆中")
 
     source = relationship("Source", back_populates="cards")

@@ -91,5 +91,6 @@ SECRET_KEY=your-secret-key-here              # JWT 签名密钥
 ## 注意事项
 
 - 卡片路由未带有效 JWT 时将返回 **401**，需先登录后再请求 `/api/v1/cards`
+- **信息采集**：OpenClaw `hook:liuwang-space` 主会话直接执行（禁止 spawn）；ingest 提交 `content_html`；单次最多 10 条；进度见 `/api/v1/collector/progress`
 - 项目没有测试，没有 CI，没有 pre-commit hooks
 - `sns.db`（SQLite 数据库文件）在 `.gitignore` 中但已存在于目录，不要提交

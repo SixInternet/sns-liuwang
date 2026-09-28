@@ -159,17 +159,17 @@ async def _run_collection(topic_id: str) -> None:
                 logger.warning("Topic %s 没有关联搜索源，跳过采集", topic_id)
                 return
 
-            # 改用 AI Sub-Agent 模式进行采集
+            # 通过 hook:liuwang-space 主会话采集
             try:
-                run_id, session_key = await agent_session.spawn_collection(topic_id)
+                run_id, _mode = await agent_session.spawn_collection(topic_id)
                 topic.last_collected_at = datetime.now()
                 await session.commit()
                 logger.info(
-                    "Topic %s 的 AI Sub-Agent 采集已启动 → run %s → session %s",
-                    topic_id, run_id, session_key,
+                    "Topic %s CDP 采集完成 → run %s",
+                    topic_id, run_id,
                 )
             except Exception as exc:
-                logger.exception("Topic %s spawn sub-agent 失败: %s", topic_id, exc)
+                logger.exception("Topic %s 采集投递失败: %s", topic_id, exc)
                 raise
 
     except Exception:

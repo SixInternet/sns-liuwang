@@ -1,4 +1,8 @@
-"""浏览器适配器 — 通过 agent-browser-stealth CLI 控制无头浏览器"""
+"""浏览器适配器 — DEPRECATED: 已迁移到 BrowserOS MCP (mcporter + browseros.*) 控制。
+
+此文件仅保留向后兼容，新采集流程使用 collection_prompt.py 中的 BrowserOS MCP 指令。
+参见 agent_session.py 中的 spawn_collection 函数。
+"""
 
 import asyncio
 import logging
@@ -33,16 +37,17 @@ class BrowserAdapter:
         self.cdp_port = cdp_port
         self.profile = profile
 
+    # opendevbrowser connect --host --cdp-port
     def _is_remote(self) -> bool:
         return bool(self.cdp_host and self.cdp_host not in ("localhost", "127.0.0.1", ""))
 
     def _agent_cmd(self) -> list[str]:
         if self.profile:
-            return ["npx", "agent-browser-stealth", "--profile", self.profile]
+            return ["npx", "opendevbrowser", "launch", "--profile", self.profile]
         elif self._is_remote():
-            return ["npx", "agent-browser-stealth", "connect", f"http://{self.cdp_host}:{self.cdp_port}"]
+            return ["npx", "opendevbrowser", "connect", "--host", self.cdp_host, "--cdp-port", str(self.cdp_port)]
         else:
-            return ["npx", "agent-browser-stealth", "--cdp", str(self.cdp_port)]
+            return ["npx", "opendevbrowser", "launch", "--no-extension", "--cdp", str(self.cdp_port)]
 
     async def _run(self, cmd_args: list[str], timeout: int = 30) -> BrowserResult:
         args = self._agent_cmd() + cmd_args
@@ -114,7 +119,7 @@ class BrowserAdapter:
             tmp = tempfile.NamedTemporaryFile(suffix=".png", delete=False)
             tmp.close()
             output_path = tmp.name
-        # agent-browser-stealth 的 screenshot 可能输出到 stdout
+        # opendevbrowser 的 screenshot 可能输出到 stdout
         args = self._agent_cmd() + ["screenshot"]
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -203,117 +208,4 @@ class BrowserAdapter:
             screenshot_path=screenshot_path,
         )
 
-    # ── CDP 原生操作（远程模式用） ──
 
-    async def _cdp_request(self, msg: dict) -> dict:
-        """发送 CDP 请求，返回结果"""
-        import json as _json
-        import websockets
-        url = f"ws://{self.cdp_host}:{self.cdp_port}/devtools/browser/"
-        async with websockets.connect(url, max_size=2**20) as ws:
-            await ws.send(_json.dumps(msg))
-            resp = await ws.recv()
-            return _json.loads(resp)
-
-    async def _cdp_get_page_content(self, url: str, wait_after_load: int = 3) -> BrowserResult:
-        """通过 CDP 原生协议打开页面并获取内容
-        返回: output=Markdown 文本, extra={"title": ..., "html": ..., "links": [...]}"""
-        import json as _json
-        import websockets
-        import httpx
-
-        try:
-            async with httpx.AsyncClient() as client:
-                new_page = await client.put(f"http://{self.cdp_host}:{self.cdp_port}/json/new")
-                if new_page.status_code != 200:
-                    return BrowserResult(success=False, error=f"创建页面失败: {new_page.status_code}")
-                page_info = new_page.json()
-                page_ws = page_info.get("webSocketDebuggerUrl", "")
-                if not page_ws:
-                    return BrowserResult(success=False, error="无法获取页面 WebSocket URL")
-
-            async with websockets.connect(page_ws, max_size=2**22) as ws:
-                msg_id = 0
-
-                async def cdp_req(method: str, params: dict | None = None) -> dict:
-                    nonlocal msg_id
-                    msg_id += 1
-                    msg = {"id": msg_id, "method": method}
-                    if params:
-                        msg["params"] = params
-                    await ws.send(_json.dumps(msg))
-                    while True:
-                        resp = _json.loads(await ws.recv())
-                        if resp.get("id") == msg_id:
-                            return resp
-
-                await cdp_req("Page.enable")
-
-                nav_result = await cdp_req("Page.navigate", {"url": url})
-                if "error" in nav_result:
-                    return BrowserResult(success=False, error=f"导航失败: {nav_result['error']}")
-
-                await asyncio.sleep(wait_after_load)
-
-                # 获取页面标题
-                js_title = await cdp_req("Runtime.evaluate", {
-                    "expression": "document.title || ''",
-                    "returnByValue": True,
-                })
-                title = js_title.get("result", {}).get("result", {}).get("value", "") or ""
-
-                # 获取完整 HTML
-                js_html = await cdp_req("Runtime.evaluate", {
-                    "expression": "document.documentElement.outerHTML",
-                    "returnByValue": True,
-                })
-                html = js_html.get("result", {}).get("result", {}).get("value", "") or ""
-
-                # 获取页面链接
-                js_links = await cdp_req("Runtime.evaluate", {
-                    "expression": "Array.from(document.querySelectorAll('a')).map(a => a.href).filter(h => h.startsWith('http')).join('\\n')",
-                    "returnByValue": True,
-                })
-                links_str = js_links.get("result", {}).get("result", {}).get("value", "") or ""
-
-            # 关闭页面
-            try:
-                page_id = page_info.get("id", "")
-                if page_id:
-                    async with httpx.AsyncClient() as client:
-                        await client.delete(f"http://{self.cdp_host}:{self.cdp_port}/json/close/{page_id}")
-            except Exception:
-                pass
-
-            if not html.strip():
-                return BrowserResult(success=False, error="页面无内容")
-
-            # 用 MarkItDown 将 HTML 转为 Markdown
-            import tempfile
-            from pathlib import Path
-            from markitdown import MarkItDown
-            tmp = tempfile.NamedTemporaryFile(suffix=".html", delete=False, mode="w", encoding="utf-8")
-            tmp.write(html)
-            tmp.close()
-            try:
-                md_result = MarkItDown().convert_local(tmp.name, url=url)
-                markdown = md_result.text_content or ""
-            except Exception:
-                markdown = ""
-            finally:
-                Path(tmp.name).unlink(missing_ok=True)
-
-            # 合并链接到 markdown 末尾
-            links_list = [l.strip() for l in links_str.split("\n") if l.strip().startswith("http")]
-
-            extra = {
-                "title": title,
-                "html": html,
-                "links": links_list,
-            }
-            result = BrowserResult(success=bool(markdown.strip()), output=markdown.strip())
-            result.extra = extra
-            return result
-
-        except Exception as e:
-            return BrowserResult(success=False, error=f"CDP 操作失败: {e}")

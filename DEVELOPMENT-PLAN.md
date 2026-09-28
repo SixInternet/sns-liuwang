@@ -179,8 +179,8 @@
 | 6.1 | agent-browser-stealth 安装验证 | M1 | Linux 端 npm 安装，验证连接 Windows Chrome CDP |
 | 6.2 | Chrome CDP 连接 Linux ↔ Windows | M1 | 同网段直连测试，延迟确认 |
 | 6.3 | 基础操作闭环（open/snapshot/click） | M2 | 自动化打开网页、截图、点击 |
-| 6.4 | DeepSeek 编排 + 采集自动化 | M3 | 六网通过 DeepSeek 拆解步骤，自动采集网页内容 |
-| 6.5 | 采集结果 → 六网精炼 → 卡片入库 | M4 | 全链路集成 SNS 后端 |
+| 6.4 | hook:liuwang-space 主会话采集 + DOM ingest | M3 | 六网在 hook 会话内 opendevbrowser 采集，提交 content_html 入库 |
+| 6.5 | 采集结果 → 六网精炼 → 卡片入库 | M4 | 全链路集成 SNS 后端；进度时间线 + 10 条上限 |
 
 ### 移动端（次优先）
 
@@ -214,11 +214,12 @@
 - 信息源模型 + API
 - DeepSeek 精炼集成
 - 前端源管理
+- **采集改造**：hook:liuwang-space 主会话直接执行（无 sub-agent spawn）；DOM ingest（content_html）；进度时间线 + N/10 计数
 
 ### Week 5-6：网页端采集（M1-M2）
-- agent-browser-stealth 部署
-- 基础操作闭环
-- 与 SNS 后端联调
+- opendevbrowser 远程 CDP 连接
+- 基础操作闭环（connect/snapshot/dom-get-html/ingest）
+- 与 SNS 后端联调（进度 API + 采集监控时间线 UI）
 
 ### Week 7-8：体验增强 + 三端补全（P1 + M3-M4）
 - 体验优化（错误处理、加载态、适配）

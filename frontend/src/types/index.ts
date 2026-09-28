@@ -124,10 +124,22 @@ export interface CollectionRunListResponse {
 }
 
 export interface CollectionProgress {
-  run_id: string
+  id: string
+  collection_run_id: string
+  step: string
   progress_type: string
   progress_pct: number
-  step_text?: string | null
-  estimated_remaining?: string | null
+  estimated_remaining: number
+  step_phase?: string | null
+  sources_collected?: number | null
+  max_sources?: number | null
+  detail?: string | null
   created_at?: string | null
+}
+
+export interface ProgressTimelineResponse {
+  items: CollectionProgress[]
+  total: number
+  sources_created: number
+  max_sources: number
 }

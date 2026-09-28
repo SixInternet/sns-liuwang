@@ -397,7 +397,7 @@ export function TopicsPage() {
   const handleCollectNow = async (id: string) => {
     setCollectingId(id)
     try {
-      await api.post('scheduler/sync', { json: { topic_id: id } })
+      await api.post('topics/' + id + '/collect-now')
       toast.success('已触发采集')
       await handleSyncScheduler()
     } catch (err: unknown) {

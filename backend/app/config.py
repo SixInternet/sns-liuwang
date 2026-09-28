@@ -26,9 +26,13 @@ class Settings(BaseSettings):
     # JWT 签名密钥
     secret_key: str = "change-me-to-a-random-secret-in-production"
 
-    # CDP 浏览器配置
+    # CDP 浏览器配置（已废弃，保留用于向后兼容）
     cdp_host: str = "10.1.0.60"
     cdp_port: int = 9333
+
+    # BrowserOS MCP 配置
+    browseros_mcp_url: str = "http://10.1.0.60:9777/mcp"
+    browseros_transport: str = "streamable-http"
 
     # DeepSeek API 配置
     deepseek_api_key: str = ""
@@ -39,6 +43,9 @@ class Settings(BaseSettings):
 
     # OpenClaw Gateway auth token
     openclaw_gateway_token: str = ""
+
+    # 单次采集最多入库的信息源数量
+    collection_max_sources: int = 10
 
     @property
     def is_dev(self) -> bool:

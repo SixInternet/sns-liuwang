@@ -123,7 +123,7 @@ async def delete_topic(db: AsyncSession, topic_id: UUID) -> bool:
 
 
 async def collect_now(db: AsyncSession, topic_id: UUID) -> CollectionRun | None:
-    """立即触发采集（通过 AI Sub-Agent）"""
+    """立即触发采集（通过 hook:liuwang-space 主会话）"""
     topic = await get_topic(db, topic_id)
     if topic is None or not topic.search_sources:
         return None

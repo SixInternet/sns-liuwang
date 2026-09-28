@@ -6,13 +6,22 @@ import type {
   CollectionRun,
   CollectionRunListResponse,
   CollectionProgress,
+  ProgressTimelineResponse,
 } from '../types'
 
 const POLL_INTERVAL_MS = 2000
 
+const ACTIVE_RUN_STATUSES = new Set([
+  'in_progress',
+  'agent_pending',
+  'pending_agent',
+])
+
 const RUN_STATUS_COLORS: Record<string, string> = {
   pending: 'bg-gray-100 text-gray-700 border-gray-200',
   in_progress: 'bg-blue-100 text-blue-800 border-blue-200',
+  agent_pending: 'bg-blue-100 text-blue-800 border-blue-200',
+  pending_agent: 'bg-blue-100 text-blue-800 border-blue-200',
   completed: 'bg-green-100 text-green-800 border-green-200',
   failed: 'bg-red-100 text-red-800 border-red-200',
   cancelled: 'bg-yellow-100 text-yellow-800 border-yellow-200',
@@ -21,9 +30,17 @@ const RUN_STATUS_COLORS: Record<string, string> = {
 const RUN_STATUS_LABELS: Record<string, string> = {
   pending: '待执行',
   in_progress: '执行中',
+  agent_pending: '等待智能体',
+  pending_agent: '等待智能体',
   completed: '已完成',
   failed: '失败',
   cancelled: '已取消',
+}
+
+const STEP_PHASE_ICONS: Record<string, string> = {
+  planned: '○',
+  running: '●',
+  done: '✓',
 }
 
 function formatTime(iso: string | null | undefined): string {
@@ -47,6 +64,21 @@ function ProgressBar({ pct }: { pct: number }) {
         style={{ width: `${clamped}%` }}
       />
     </div>
+  )
+}
+
+function StepPhaseIcon({ phase }: { phase?: string | null }) {
+  const icon = STEP_PHASE_ICONS[phase ?? 'running'] ?? '●'
+  const isRunning = phase === 'running'
+  return (
+    <span
+      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center text-xs font-bold ${
+        isRunning ? 'text-blue-600 animate-pulse' : 'text-gray-500'
+      }`}
+      title={phase ?? 'running'}
+    >
+      {icon}
+    </span>
   )
 }
 
@@ -74,7 +106,7 @@ function CaptchaCard({
         </span>
       </div>
       <p className="mb-3 text-xs text-yellow-700">
-        采集任务遇到验证码，需要手动处理。
+        采集任务遇到验证码，请在浏览器中手动处理后点击「已解决」。
       </p>
       <div className="flex gap-2">
         <button
@@ -98,12 +130,77 @@ function CaptchaCard({
   )
 }
 
+function TimelineView({
+  items,
+  sourcesCreated,
+  maxSources,
+  latestPct,
+  showCaptcha,
+  runId,
+  onCaptchaAction,
+}: {
+  items: CollectionProgress[]
+  sourcesCreated: number
+  maxSources: number
+  latestPct: number
+  showCaptcha: boolean
+  runId: string
+  onCaptchaAction: (runId: string, action: 'resolve' | 'cancel') => void
+}) {
+  return (
+    <div className="flex flex-col gap-3">
+      <div className="flex items-center justify-between text-xs text-gray-600">
+        <span>已采集 {sourcesCreated}/{maxSources} 条</span>
+        <span>{latestPct}%</span>
+      </div>
+      <ProgressBar pct={latestPct} />
+
+      <ul className="mt-1 flex flex-col gap-2 border-l-2 border-gray-200 pl-3">
+        {items.map((item) => {
+          const isRunning = item.step_phase === 'running'
+          return (
+            <li
+              key={item.id}
+              className={`relative text-sm ${
+                isRunning ? 'font-medium text-blue-800' : 'text-gray-700'
+              }`}
+            >
+              <div className="flex items-start gap-2">
+                <StepPhaseIcon phase={item.step_phase} />
+                <div className="min-w-0 flex-1">
+                  <p>{item.step}</p>
+                  <div className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-gray-400">
+                    <span>{formatTime(item.created_at)}</span>
+                    {item.progress_type !== 'progress' ? (
+                      <span className="uppercase">{item.progress_type}</span>
+                    ) : null}
+                    {item.sources_collected != null ? (
+                      <span>{item.sources_collected}/{item.max_sources ?? maxSources}</span>
+                    ) : null}
+                  </div>
+                  {item.detail ? (
+                    <p className="mt-1 text-xs text-gray-500 line-clamp-2">{item.detail}</p>
+                  ) : null}
+                </div>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+
+      {showCaptcha ? (
+        <CaptchaCard runId={runId} onAction={onCaptchaAction} />
+      ) : null}
+    </div>
+  )
+}
+
 export function CollectionMonitorPage() {
   const toast = useToast()
   const [runs, setRuns] = useState<CollectionRun[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
-  const [progressMap, setProgressMap] = useState<Record<string, CollectionProgress>>({})
+  const [timelineMap, setTimelineMap] = useState<Record<string, ProgressTimelineResponse>>({})
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const loadRuns = useCallback(async () => {
@@ -123,12 +220,12 @@ export function CollectionMonitorPage() {
     loadRuns()
   }, [loadRuns])
 
-  const fetchProgress = useCallback(async (runId: string) => {
+  const fetchTimeline = useCallback(async (runId: string) => {
     try {
       const data = await api
-        .get(`collector/progress/${runId}`, { searchParams: { latest: '1' } })
-        .json<CollectionProgress>()
-      setProgressMap((prev) => ({ ...prev, [runId]: data }))
+        .get(`collector/progress/${runId}`)
+        .json<ProgressTimelineResponse>()
+      setTimelineMap((prev) => ({ ...prev, [runId]: data }))
     } catch {
       // silent — progress may not exist yet
     }
@@ -141,14 +238,14 @@ export function CollectionMonitorPage() {
     }
 
     const activeRunIds = runs
-      .filter((r) => r.status === 'in_progress')
+      .filter((r) => ACTIVE_RUN_STATUSES.has(r.status))
       .map((r) => r.id)
 
     if (activeRunIds.length === 0) return
 
     const poll = () => {
       for (const id of activeRunIds) {
-        fetchProgress(id)
+        fetchTimeline(id)
       }
     }
 
@@ -161,18 +258,18 @@ export function CollectionMonitorPage() {
         pollRef.current = null
       }
     }
-  }, [runs, fetchProgress])
+  }, [runs, fetchTimeline])
 
   useEffect(() => {
     if (!expandedId) return
-    fetchProgress(expandedId)
-  }, [expandedId, fetchProgress])
+    fetchTimeline(expandedId)
+  }, [expandedId, fetchTimeline])
 
   const handleCaptchaAction = async (runId: string, action: 'resolve' | 'cancel') => {
     try {
       await api.post(`collector/progress/${runId}/${action}`)
       toast.success(action === 'resolve' ? '已标记解决' : '任务已取消')
-      await fetchProgress(runId)
+      await fetchTimeline(runId)
       await loadRuns()
     } catch (err: unknown) {
       toast.error(await resolveErrorMessage(err))
@@ -234,8 +331,14 @@ export function CollectionMonitorPage() {
         <ul className="flex flex-col gap-3">
           {runs.map((run) => {
             const isExpanded = expandedId === run.id
-            const progress = progressMap[run.id]
-            const isActive = run.status === 'in_progress'
+            const timeline = timelineMap[run.id]
+            const isActive = ACTIVE_RUN_STATUSES.has(run.status)
+            const items = timeline?.items ?? []
+            const latest = items.length > 0 ? items[items.length - 1] : null
+            const latestPct = latest?.progress_pct ?? 0
+            const sourcesCreated = timeline?.sources_created ?? 0
+            const maxSources = timeline?.max_sources ?? 10
+            const showCaptcha = latest?.progress_type === 'captcha'
 
             return (
               <li key={run.id}>
@@ -257,6 +360,11 @@ export function CollectionMonitorPage() {
                         >
                           {RUN_STATUS_LABELS[run.status] ?? run.status}
                         </span>
+                        {isActive && timeline ? (
+                          <span className="text-xs text-gray-500">
+                            {sourcesCreated}/{maxSources}
+                          </span>
+                        ) : null}
                       </div>
                       <div className="flex flex-wrap gap-x-4 gap-y-0.5 text-xs text-gray-500">
                         <span>开始：{formatTime(run.started_at)}</span>
@@ -270,37 +378,22 @@ export function CollectionMonitorPage() {
 
                   {isExpanded ? (
                     <div className="border-t border-gray-100 px-4 py-4">
-                      {progress ? (
-                        <div className="flex flex-col gap-3">
-                          {progress.step_text ? (
-                            <p className="text-sm text-gray-700">
-                              {progress.step_text}
-                            </p>
-                          ) : null}
-
-                          <div>
-                            <div className="mb-1 flex items-center justify-between text-xs text-gray-500">
-                              <span>进度</span>
-                              <span>{progress.progress_pct}%</span>
-                            </div>
-                            <ProgressBar pct={progress.progress_pct} />
-                          </div>
-
-                          {progress.estimated_remaining ? (
-                            <p className="text-xs text-gray-500">
-                              预计剩余：{progress.estimated_remaining}
-                            </p>
-                          ) : null}
-
-                          {isActive && progress.progress_type === 'captcha' ? (
-                            <CaptchaCard
-                              runId={run.id}
-                              onAction={handleCaptchaAction}
-                            />
-                          ) : null}
-                        </div>
+                      {items.length > 0 ? (
+                        <TimelineView
+                          items={items}
+                          sourcesCreated={sourcesCreated}
+                          maxSources={maxSources}
+                          latestPct={latestPct}
+                          showCaptcha={!!showCaptcha && isActive}
+                          runId={run.id}
+                          onCaptchaAction={handleCaptchaAction}
+                        />
                       ) : isActive ? (
                         <p className="text-sm text-gray-400">等待进度数据…</p>
+                      ) : run.status === 'completed' ? (
+                        <p className="text-sm text-gray-500">
+                          采集已完成，请到「信息来源」查看新记录。
+                        </p>
                       ) : (
                         <p className="text-sm text-gray-400">无进度详情</p>
                       )}

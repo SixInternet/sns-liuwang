@@ -1,0 +1,58 @@
+#!/bin/bash
+# SNS 信息采集辅助：进度汇报、ingest、CAPTCHA 轮询
+
+set -euo pipefail
+
+usage() {
+  echo "用法:"
+  echo "  sns-collection progress <api_base> <run_id> '<json_body>'"
+  echo "  sns-collection ingest <api_base> '<json_body>'"
+  echo "  sns-collection poll-resolved <api_base> <run_id> [max_seconds=300]"
+  exit 1
+}
+
+[ $# -ge 1 ] || usage
+
+cmd="$1"
+shift
+
+case "$cmd" in
+  progress)
+    [ $# -ge 3 ] || usage
+    api_base="${1%/}"
+    run_id="$2"
+    body="$3"
+    curl -s -X POST "${api_base}/api/v1/collector/progress" \
+      -H "Content-Type: application/json" \
+      -d "$body"
+    ;;
+  ingest)
+    [ $# -ge 2 ] || usage
+    api_base="${1%/}"
+    body="$2"
+    curl -s -X POST "${api_base}/api/v1/collector/ingest" \
+      -H "Content-Type: application/json" \
+      -d "$body"
+    ;;
+  poll-resolved)
+    [ $# -ge 2 ] || usage
+    api_base="${1%/}"
+    run_id="$2"
+    max="${3:-300}"
+    elapsed=0
+    while [ "$elapsed" -lt "$max" ]; do
+      resp="$(curl -s "${api_base}/api/v1/collector/progress/${run_id}?latest=1")"
+      if echo "$resp" | grep -q '"progress_type"[[:space:]]*:[[:space:]]*"resolved"'; then
+        echo "$resp"
+        exit 0
+      fi
+      sleep 10
+      elapsed=$((elapsed + 10))
+    done
+    echo "timeout waiting for resolved" >&2
+    exit 1
+    ;;
+  *)
+    usage
+    ;;
+esac
